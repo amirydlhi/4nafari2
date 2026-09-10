@@ -814,25 +814,57 @@ textarea.field{resize:none}
   </div>
 </div>
 
-<!-- مودال پیوستن به فضای گروه -->
-<div class="overlay" id="joinOverlay" role="dialog" aria-modal="true" aria-label="پیوستن به فضای گروه">
+<!-- مودال اتصال فضای گروه (گیت‌هاب) -->
+<div class="overlay" id="joinOverlay" role="dialog" aria-modal="true" aria-label="اتصال فضای گروه">
   <div class="overlay-back" data-action="close-join"></div>
-  <form class="sheet sheet-sm" id="joinForm">
+  <div class="sheet sheet-sm" style="max-width:27rem">
     <span class="tape"></span>
     <button type="button" class="x-btn" data-action="close-join" title="بستن">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
     </button>
-    <h3 style="font-size:1.5rem">پیوستن به گروه</h3>
-    <p class="sub">کدی که برایت فرستاده‌اند را وارد کن.</p>
-    <label style="display:block;margin-top:1.25rem">
-      <span class="lbl">کد فضای گروه</span>
-      <input class="field code-field" id="joinCode" placeholder="xxxxxxxx" autocomplete="off" />
-    </label>
-    <button type="submit" class="btn-hard submit" id="joinBtn" style="margin-top:1.25rem">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
-      <span id="joinLabel">وصل شو</span>
-    </button>
-  </form>
+    <h3 style="font-size:1.5rem">فضای گروه روی گیت‌هاب</h3>
+    <p class="sub">خاطره‌ها در یک فایل داخل مخزنِ خودت ذخیره می‌شوند — دائمی، رایگان و مشترک بین همه‌ی گوشی‌ها.</p>
+
+    <!-- حالت صاحب گروه -->
+    <div style="margin-top:1.1rem;border:2px dashed rgba(59,42,30,.15);border-radius:10px;padding:.9rem">
+      <p class="lbl" style="margin-bottom:.4rem">الف) من صاحب گروهم (بارِ اول)</p>
+      <p style="font-size:12px;line-height:1.9;color:var(--ink-soft)">
+        ۱) با این لینک یک توکن بساز:
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener"
+           style="color:var(--teal);font-weight:700;text-decoration:underline">ساخت توکن</a>
+        — در بخش Repository access فقط همین مخزنِ سایت را انتخاب کن و دسترسی <b>Contents: Read and write</b> بده.
+        <br>۲) توکنِ ساخته‌شده (github_pat_…) را کپی و این‌جا بچسبان.
+      </p>
+      <label style="display:block;margin-top:.6rem">
+        <span class="lbl" style="font-size:12px">مخزن (owner/repo)</span>
+        <input class="field code-field" id="ghRepo" placeholder="username/username.github.io" autocomplete="off" />
+      </label>
+      <label style="display:block;margin-top:.5rem">
+        <span class="lbl" style="font-size:12px">توکن</span>
+        <input class="field code-field" id="ghToken" placeholder="github_pat_…" autocomplete="off" />
+      </label>
+      <button class="btn-hard btn-teal" data-action="connect-owner" id="ownerBtn"
+        style="width:100%;margin-top:.7rem;padding:.6rem;font-size:1.05rem">
+        <span id="ownerLabel">اتصال و ساخت فضای گروه</span>
+      </button>
+    </div>
+
+    <!-- حالت بقیه اعضا -->
+    <div style="margin-top:.9rem;border:2px dashed rgba(59,42,30,.15);border-radius:10px;padding:.9rem">
+      <p class="lbl" style="margin-bottom:.4rem">ب) عضو گروهم (کد اتصال دارم)</p>
+      <p style="font-size:12px;line-height:1.8;color:var(--ink-soft)">
+        کدی که صاحب گروه فرستاده را این‌جا بچسبان.
+      </p>
+      <label style="display:block;margin-top:.6rem">
+        <span class="lbl" style="font-size:12px">کد اتصال</span>
+        <input class="field code-field" id="ghCode" placeholder="کد را این‌جا بچسبان" autocomplete="off" />
+      </label>
+      <button class="btn-hard btn-primary" data-action="connect-join" id="joinBtn"
+        style="width:100%;margin-top:.7rem;padding:.6rem;font-size:1.05rem">
+        <span id="joinLabel">وصل شو</span>
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- اعلان -->
@@ -962,9 +994,10 @@ function saveUserMems(){
    برای بقیه می‌فرستید و خاطره‌ها بین همه‌ی گوشی‌ها یکی می‌شود.
    نکته: فضای غیرفعالِ ۷۵ روزه پاک می‌شود؛ گاهی سری بزنید.
    ============================================================ */
-const LS_SPACE = "patogh-space-v1";
-const SP_API = "https://jsonblob.com/api/jsonBlob";
-state.space = null;      /* { id } */
+const LS_SPACE = "patogh-space-v2";
+const GH_API = "https://api.github.com";
+const DATA_PATH = "patogh-data.json";
+state.space = null;      /* { repo, token } */
 let pushTimer = null;
 let pullTimer = null;
 
@@ -972,7 +1005,8 @@ function loadSpace(){
   try{
     const raw = localStorage.getItem(LS_SPACE);
     const s = raw ? JSON.parse(raw) : null;
-    if (s && typeof s.id === "string" && s.id.length >= 6) return s;
+    if (s && typeof s.repo === "string" && typeof s.token === "string"
+        && s.repo.includes("/") && s.token.length > 10) return s;
   }catch{}
   return null;
 }
@@ -994,9 +1028,34 @@ function schedulePush(){
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushSync, 1200);
 }
+const b64enc = s => btoa(unescape(encodeURIComponent(s)));
+const b64dec = s => decodeURIComponent(escape(atob(String(s).replace(/\s/g, ""))));
+const ghHeaders = () => ({
+  "Authorization": "Bearer " + state.space.token,
+  "Accept": "application/vnd.github+json",
+  "Content-Type": "application/json"
+});
+function ghErr(res){
+  if (res.status === 401) return "توکن اشتباه است یا منقضی شده؛ دوباره بساز.";
+  if (res.status === 403) return "دسترسی توکن کم است؛ Contents: Read and write لازم است.";
+  if (res.status === 404) return "مخزن پیدا نشد؛ نام owner/repo را چک کن.";
+  return "خطای شبکه (" + res.status + ")";
+}
+/* حدس مخزن از آدرس سایت روی گیت‌هاب‌پیجز */
+function guessRepo(){
+  const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
+  return m ? m[1] + "/" + m[1] + ".github.io" : "";
+}
+async function ghGetFile(){
+  const res = await fetch(`${GH_API}/repos/${state.space.repo}/contents/${DATA_PATH}`, { headers: ghHeaders() });
+  if (res.status === 404) return { obj: null, sha: null };
+  if (!res.ok) throw Object.assign(new Error("get"), { res });
+  const d = await res.json();
+  return { obj: JSON.parse(b64dec(d.content)), sha: d.sha };
+}
 async function pushSync(silent = true){
   if (!state.space) return;
-  const payload = JSON.stringify({ app:"patogh-ma", v:2, at:new Date().toISOString(), memories: state.userMems });
+  const payload = JSON.stringify({ app:"patogh-ma", v:3, at:new Date().toISOString(), memories: state.userMems });
   if (payload.length > 4_500_000){
     spStatus("err", "حجم زیاد");
     if (!silent) showToast("حجم عکس‌ها برای همگام‌سازی زیاد است؛ با عکسِ کمتر امتحان کن.");
@@ -1004,16 +1063,17 @@ async function pushSync(silent = true){
   }
   if (!silent) spStatus("busy", "در حال ذخیره…");
   try{
-    const res = await fetch(`${SP_API}/${state.space.id}`, {
-      method: "PUT",
-      headers: { "Content-Type":"application/json", "Accept":"application/json" },
-      body: payload
+    const { sha } = await ghGetFile();
+    const body = { message: "پاتوق ما: بروزرسانی خاطره‌ها", content: b64enc(payload) };
+    if (sha) body.sha = sha;
+    const res = await fetch(`${GH_API}/repos/${state.space.repo}/contents/${DATA_PATH}`, {
+      method: "PUT", headers: ghHeaders(), body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error("put");
+    if (!res.ok) throw Object.assign(new Error("put"), { res });
     spStatus("ok", "متصل");
-  }catch{
-    spStatus("err", "خطا در اتصال");
-    if (!silent) showToast("ذخیره در فضای گروه ممکن نشد؛ دوباره تلاش می‌شود.");
+  }catch(e){
+    spStatus("err", "خطا");
+    if (!silent) showToast("ذخیره ممکن نشد؛ " + (e.res ? ghErr(e.res) : "اینترنت را چک کن."));
   }
 }
 function cleanRemote(arr){
@@ -1036,10 +1096,8 @@ async function pullSync(silent = true){
   if (!state.space) return 0;
   if (!silent) spStatus("busy", "بروزرسانی…");
   try{
-    const res = await fetch(`${SP_API}/${state.space.id}`, { headers:{ "Accept":"application/json" } });
-    if (!res.ok) throw new Error("get");
-    const data = await res.json();
-    const remote = cleanRemote(data && data.memories);
+    const { obj } = await ghGetFile();
+    const remote = cleanRemote(obj && obj.memories);
     const existing = new Map(state.userMems.map(m => [m.id, m]));
     let added = 0;
     remote.forEach(r => { if (!existing.has(r.id)){ state.userMems.push(r); added++; } });
@@ -1052,56 +1110,83 @@ async function pullSync(silent = true){
     if (!silent && added) showToast(`${toFa(added)} خاطره‌ی تازه از بقیه رسید.`);
     else if (!silent && !added) showToast("همه‌چیز بروز است.");
     return added;
-  }catch{
-    spStatus("err", "خطا در اتصال");
-    if (!silent) showToast("بروزرسانی ممکن نشد؛ اینترنت را چک کن.");
+  }catch(e){
+    spStatus("err", "خطا");
+    if (!silent) showToast("بروزرسانی ممکن نشد؛ " + (e.res ? ghErr(e.res) : "اینترنت را چک کن."));
     return 0;
   }
 }
-async function createSpace(){
-  spStatus("busy", "در حال ساخت…");
-  $("#spActions").querySelectorAll("button").forEach(b => b.disabled = true);
+/* ---------- اتصال: صاحب گروه ---------- */
+async function connectOwner(){
+  const repo = $("#ghRepo").value.trim();
+  const token = $("#ghToken").value.trim();
+  if (!repo.includes("/") || token.length < 10){
+    showToast("نام مخزن (owner/repo) و توکن را کامل وارد کن.");
+    return;
+  }
+  state.space = { repo, token };
+  $("#ownerBtn").disabled = true;
+  $("#ownerLabel").textContent = "یک لحظه…";
+  spStatus("busy", "در حال اتصال…");
   try{
-    const res = await fetch(SP_API, {
-      method: "POST",
-      headers: { "Content-Type":"application/json", "Accept":"application/json" },
-      body: JSON.stringify({ app:"patogh-ma", v:2, at:new Date().toISOString(), memories: state.userMems })
-    });
-    if (!res.ok) throw new Error("post");
-    const loc = res.headers.get("Location") || "";
-    const id = loc.split("/").pop();
-    if (!id) throw new Error("no-id");
-    saveSpace({ id });
+    /* اعتبارسنجی توکن و مخزن */
+    const chk = await fetch(`${GH_API}/repos/${repo}`, { headers: ghHeaders() });
+    if (!chk.ok) throw Object.assign(new Error("chk"), { res: chk });
+    /* اگر فایل گروه هست بخوان، وگرنه با خاطره‌های فعلی بساز */
+    const { obj } = await ghGetFile();
+    saveSpace(state.space);
+    closeJoin();
     renderSpace();
-    spStatus("ok", "متصل");
-    showToast("فضای گروه ساخته شد! کدش را برای بقیه بفرست.");
-    await pushSync(true);
-  }catch{
+    if (obj){
+      await pullSync(true);
+      showToast("به فضای موجود وصل شدی!");
+    } else {
+      await pushSync(true);
+      showToast("فضای گروه ساخته شد! حالا «کد اتصال» را برای بقیه بفرست.");
+    }
+  }catch(e){
+    saveSpace(null);
     spStatus("err", "خطا");
-    showToast("ساخت فضای گروه ممکن نشد؛ اینترنت را چک کن.");
+    showToast(e.res ? ghErr(e.res) : "اتصال ممکن نشد؛ اینترنت را چک کن.");
   }finally{
-    $("#spActions").querySelectorAll("button").forEach(b => b.disabled = false);
+    $("#ownerBtn").disabled = false;
+    $("#ownerLabel").textContent = "اتصال و ساخت فضای گروه";
   }
 }
-async function joinSpace(code){
-  const id = (code || "").trim();
-  if (id.length < 6){ showToast("کد را درست وارد کن."); return; }
+/* ---------- اتصال: با کد ---------- */
+async function connectJoin(){
+  const raw = $("#ghCode").value.trim();
+  if (!raw){ showToast("کد اتصال را بچسبان."); return; }
+  let repo, token;
+  try{
+    const parts = b64dec(raw).split("|");
+    repo = parts[0]; token = parts.slice(1).join("|");
+    if (!repo || !repo.includes("/") || !token) throw 0;
+  }catch{
+    showToast("کد اتصال معتبر نیست.");
+    return;
+  }
+  state.space = { repo, token };
   $("#joinBtn").disabled = true;
   $("#joinLabel").textContent = "یک لحظه…";
   try{
-    const res = await fetch(`${SP_API}/${id}`, { headers:{ "Accept":"application/json" } });
-    if (!res.ok) throw new Error("get");
-    saveSpace({ id });
+    const chk = await fetch(`${GH_API}/repos/${repo}`, { headers: ghHeaders() });
+    if (!chk.ok) throw Object.assign(new Error("chk"), { res: chk });
+    saveSpace(state.space);
     closeJoin();
     renderSpace();
     const added = await pullSync(true);
     showToast(added ? `وصل شد! ${toFa(added)} خاطره‌ی گروه رسید.` : "وصل شد! از این به بعد خاطره‌ها مشترک‌اند.");
-  }catch{
-    showToast("این کد پیدا نشد؛ دوباره چک کن.");
+  }catch(e){
+    saveSpace(null);
+    showToast(e.res ? ghErr(e.res) : "اتصال ممکن نشد؛ اینترنت را چک کن.");
   }finally{
     $("#joinBtn").disabled = false;
     $("#joinLabel").textContent = "وصل شو";
   }
+}
+function connectCode(){
+  return state.space ? b64enc(state.space.repo + "|" + state.space.token) : "";
 }
 function leaveSpace(){
   saveSpace(null);
@@ -1117,10 +1202,10 @@ function copyText(t){
   } else showToast("کد: " + t);
 }
 function shareSpace(){
-  const txt = `بیا تو پاتوق ما! این کد را در سایت وارد کن: ${state.space.id}`;
+  const txt = "بیا تو پاتوق ما! این «کد اتصال» را در بخش فضای گروهِ سایت بچسبان:\n" + connectCode();
   if (navigator.share){
-    navigator.share({ title:"پاتوق ما", text: txt }).catch(()=>{});
-  } else copyText(state.space.id);
+    navigator.share({ title: "پاتوق ما", text: txt }).catch(()=>{});
+  } else copyText(connectCode());
 }
 function renderSpace(){
   const box = $("#spActions");
@@ -1128,42 +1213,34 @@ function renderSpace(){
   if (!state.space){
     spStatus(null);
     codeBox.classList.remove("show");
-    $("#spDesc").textContent = "خاطره‌ها فعلاً فقط روی همین دستگاه‌اند. یک فضای گروه بساز، کدش را برای بقیه بفرست تا خاطره‌ها بین همه‌ی گوشی‌ها یکی شود.";
+    $("#spDesc").textContent = "خاطره‌ها فعلاً فقط روی همین دستگاه‌اند. با یک توکنِ گیت‌هاب (رایگان) فضای گروه بساز تا خاطره‌ها بین همه‌ی گوشی‌ها یکی شود و همیشه بماند.";
     box.innerHTML = `
-      <button class="sp-btn primary" data-action="space-create">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>
-        ساخت فضای گروه
-      </button>
-      <button class="sp-btn" data-action="space-join-open">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
-        پیوستن با کد
+      <button class="sp-btn primary" data-action="space-connect">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        اتصال فضای گروه
       </button>`;
   } else {
-    $("#spDesc").textContent = "وصلی! هر خاطره‌ی تازه بین همه‌ی گوشی‌های متصل همگام می‌شود. بقیه با همین کد وصل می‌شوند.";
+    $("#spDesc").textContent = "وصلی! خاطره‌ها در فایل patogh-data.json داخل مخزنِ خودت ذخیره می‌شوند و بین همه‌ی گوشی‌های متصل همگام‌اند.";
     codeBox.classList.add("show");
-    $("#spCodeVal").textContent = state.space.id;
+    $("#spCodeVal").textContent = connectCode().slice(0, 18) + "…";
     box.innerHTML = `
-      <button class="sp-btn" data-action="space-copy">کپی کد</button>
-      <button class="sp-btn" data-action="space-share">فرستادن کد</button>
+      <button class="sp-btn" data-action="space-copy">کپی کد اتصال</button>
+      <button class="sp-btn" data-action="space-share">فرستادن به گروه</button>
       <button class="sp-btn" data-action="space-refresh">بروزرسانی</button>
       <button class="sp-btn danger" data-action="space-leave">جدا شدن</button>`;
     spStatus("ok", "متصل");
   }
 }
-function openJoin(){
-  $("#joinCode").value = "";
+function openConnect(){
+  if (!$("#ghRepo").value) $("#ghRepo").value = guessRepo();
+  $("#ghCode").value = "";
   $("#joinOverlay").classList.add("open");
   document.body.style.overflow = "hidden";
-  setTimeout(() => $("#joinCode").focus(), 250);
 }
 function closeJoin(){
   $("#joinOverlay").classList.remove("open");
   document.body.style.overflow = "";
 }
-$("#joinForm").addEventListener("submit", e => {
-  e.preventDefault();
-  joinSpace($("#joinCode").value);
-});
 
 const allMems = () => [...state.userMems, ...MEMORIES];
 function visibleMems(){
@@ -1603,10 +1680,11 @@ document.addEventListener("click", e => {
   else if (act === "pick-gal")  $("#galInput").click();
   else if (act === "export")    exportBackup();
   else if (act === "import")    $("#importInput").click();
-  else if (act === "space-create")   createSpace();
-  else if (act === "space-join-open")openJoin();
+  else if (act === "space-connect")  openConnect();
   else if (act === "close-join")     closeJoin();
-  else if (act === "space-copy")     copyText(state.space && state.space.id || "");
+  else if (act === "connect-owner")  connectOwner();
+  else if (act === "connect-join")   connectJoin();
+  else if (act === "space-copy")     copyText(connectCode());
   else if (act === "space-share")    shareSpace();
   else if (act === "space-refresh")  pullSync(false);
   else if (act === "space-leave")    leaveSpace();
