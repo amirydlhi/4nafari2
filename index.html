@@ -836,8 +836,8 @@ textarea.field{resize:none}
         <br>۲) توکنِ ساخته‌شده (github_pat_…) را کپی و این‌جا بچسبان.
       </p>
       <label style="display:block;margin-top:.6rem">
-        <span class="lbl" style="font-size:12px">مخزن (owner/repo)</span>
-        <input class="field code-field" id="ghRepo" placeholder="username/username.github.io" autocomplete="off" />
+        <span class="lbl" style="font-size:12px">مخزن (لینک کامل یا owner/repo)</span>
+        <input class="field code-field" id="ghRepo" placeholder="username/repo" autocomplete="off" inputmode="url" />
       </label>
       <label style="display:block;margin-top:.5rem">
         <span class="lbl" style="font-size:12px">توکن</span>
@@ -1038,7 +1038,7 @@ const ghHeaders = () => ({
 function ghErr(res){
   if (res.status === 401) return "توکن اشتباه است یا منقضی شده؛ دوباره بساز.";
   if (res.status === 403) return "دسترسی توکن کم است؛ Contents: Read and write لازم است.";
-  if (res.status === 404) return "مخزن پیدا نشد؛ نام owner/repo را چک کن.";
+  if (res.status === 404) return "مخزن پیدا نشد؛ یا نامش اشتباه است یا توکن برای همین مخزن ساخته نشده.";
   return "خطای شبکه (" + res.status + ")";
 }
 /* حدس مخزن از آدرس سایت روی گیت‌هاب‌پیجز */
@@ -1046,6 +1046,16 @@ function guessRepo(){
   const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
   return m ? m[1] + "/" + m[1] + ".github.io" : "";
 }
+/* هر ورودی را به قالب owner/repo تبدیل می‌کند:
+   لینک کامل، با .git، با اسلش اضافه — همه پذیرفته می‌شوند */
+function normalizeRepo(input){
+  let s = String(input || "").trim();
+  s = s.replace(/^https?:\/\/(www\.)?github\.com\//i, "");
+  s = s.replace(/\.git$/i, "").replace(/\/+$/,"");
+  s = s.replace(/\/(settings|issues|pulls|actions).*$/i, "");
+  return s;
+}
+const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 async function ghGetFile(){
   const res = await fetch(`${GH_API}/repos/${state.space.repo}/contents/${DATA_PATH}`, { headers: ghHeaders() });
   if (res.status === 404) return { obj: null, sha: null };
@@ -1118,10 +1128,15 @@ async function pullSync(silent = true){
 }
 /* ---------- اتصال: صاحب گروه ---------- */
 async function connectOwner(){
-  const repo = $("#ghRepo").value.trim();
+  const repo = normalizeRepo($("#ghRepo").value);
   const token = $("#ghToken").value.trim();
-  if (!repo.includes("/") || token.length < 10){
-    showToast("نام مخزن (owner/repo) و توکن را کامل وارد کن.");
+  $("#ghRepo").value = repo;
+  if (!REPO_RE.test(repo)){
+    showToast("قالب مخزن درست نیست؛ مثال: amirydlhi/4nafari2");
+    return;
+  }
+  if (token.length < 10){
+    showToast("توکن را کامل بچسبان.");
     return;
   }
   state.space = { repo, token };
@@ -1147,7 +1162,7 @@ async function connectOwner(){
   }catch(e){
     saveSpace(null);
     spStatus("err", "خطا");
-    showToast(e.res ? ghErr(e.res) : "اتصال ممکن نشد؛ اینترنت را چک کن.");
+    showToast(e.res ? ghErr(e.res) : "ارتباط با گیت‌هاب برقرار نشد؛ اینترنت را چک کن.");
   }finally{
     $("#ownerBtn").disabled = false;
     $("#ownerLabel").textContent = "اتصال و ساخت فضای گروه";
@@ -1160,8 +1175,8 @@ async function connectJoin(){
   let repo, token;
   try{
     const parts = b64dec(raw).split("|");
-    repo = parts[0]; token = parts.slice(1).join("|");
-    if (!repo || !repo.includes("/") || !token) throw 0;
+    repo = normalizeRepo(parts[0]); token = parts.slice(1).join("|");
+    if (!REPO_RE.test(repo) || !token) throw 0;
   }catch{
     showToast("کد اتصال معتبر نیست.");
     return;
