@@ -115,7 +115,17 @@ textarea.field{resize:none}
 .badge svg{color:var(--mustard)}
 .hero-title{font-family:var(--font-display);font-size:clamp(3.1rem,9vw,5.6rem);line-height:1.08;margin-top:1.25rem;font-weight:400}
 .hl{position:relative;display:inline-block;padding-inline:.5rem;max-width:100%;}
-@media(max-width:767px){.hl{display:block;padding-inline:0}.hero-copy,.collage,.hero-grid,.tl,.tl-card,.mem,.m-card{min-width:0}.hero-title{overflow-wrap:anywhere}.wrap{width:100%;max-width:100%}}
+@media(max-width:767px){
+  .hl{display:block;padding-inline:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+  .hero-copy,.collage,.hero-grid,.tl,.tl-card,.mem,.m-card,.sec-head,.header-in,.footer-in{min-width:0;max-width:100%}
+  .hero-title{overflow-wrap:anywhere;word-break:break-word;max-width:100%}
+  .wrap{width:100%;max-width:100%;min-width:0}
+  .hero-grid,.hero-copy,.collage{overflow:hidden}
+  .hero-cta > *{max-width:100%}
+  .authors,.dates{min-width:0}
+  .sheet{max-width:100vw}
+  .field{min-width:0}
+}
 .hl-bg{position:absolute;inset:0;transform:rotate(-1deg);background:rgba(227,163,43,.3);border-radius:6px}
 .hl svg.squig{position:absolute;bottom:-.2em;right:0;width:100%;height:.22em;color:var(--coral)}
 .slogan{margin-top:1.75rem;max-width:28rem;font-family:var(--font-nasta);font-size:17px;line-height:2.2;color:var(--ink-soft)}
@@ -658,7 +668,7 @@ textarea.field{resize:none}
     <div class="previews" id="previews"></div>
     <p class="ph-note">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-      عکس‌ها روی همین مرورگر ذخیره می‌شوند؛ برای همین کمی فشرده می‌شوند.
+      عکس‌ها در آرشیو آنلاین ذخیره می‌شوند و در صورت نیاز قبل از آپلود فشرده می‌شوند.
     </p>
     <button type="submit" class="btn-hard submit" id="submitBtn">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg>
@@ -1095,6 +1105,40 @@ function closeAdd(){
   document.body.style.overflow = "";
 }
 /* ---------------- آپلود عکس ---------------- */
+async function compressForUpload(file, maxDim = 1800, quality = 0.82){
+  if (!file || !file.type.startsWith("image/")) throw new Error("NOT_IMAGE");
+  if (file.size <= 7 * 1024 * 1024) return file;
+
+  try{
+    const url = URL.createObjectURL(file);
+    try{
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error("DECODE_FAILED"));
+        im.src = url;
+      });
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d", { alpha:false });
+      if (!ctx) return file;
+      ctx.fillStyle = "#fffdf4";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (!blob) return file;
+      const base = (file.name || "photo").replace(/\.[^.]+$/, "");
+      return new File([blob], `${base}.jpg`, { type:"image/jpeg", lastModified:Date.now() });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }catch{
+    return file;
+  }
+}
+
 async function uploadToCloudinary(file){
   const cloud = String(window.CLOUDINARY_CLOUD_NAME || "").trim();
   const preset = String(window.CLOUDINARY_UPLOAD_PRESET || "").trim();
@@ -1102,22 +1146,32 @@ async function uploadToCloudinary(file){
     throw new Error("CLOUDINARY_NOT_CONFIGURED");
   }
   if (!file || !file.type.startsWith("image/")) throw new Error("NOT_IMAGE");
-  if (file.size > 12 * 1024 * 1024) throw new Error("IMAGE_TOO_LARGE");
+  if (file.size > 15 * 1024 * 1024) throw new Error("IMAGE_TOO_LARGE");
+
+  const uploadFile = await compressForUpload(file);
+  if (uploadFile.size > 15 * 1024 * 1024) throw new Error("IMAGE_TOO_LARGE");
 
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", uploadFile);
   form.append("upload_preset", preset);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloud)}/image/upload`, {
-    method: "POST",
-    body: form
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.secure_url){
-    throw new Error(data?.error?.message || "CLOUDINARY_UPLOAD_FAILED");
+  let res;
+  try{
+    res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloud)}/image/upload`, {
+      method: "POST",
+      body: form
+    });
+  }catch(err){
+    console.error("Cloudinary network error:", err);
+    throw new Error("CLOUDINARY_NETWORK");
   }
 
-  // فرمت/کیفیت تحویلی را متناسب با دستگاه انتخاب کن.
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.secure_url){
+    console.error("Cloudinary response:", data);
+    throw new Error(data?.error?.message || `HTTP_${res.status}`);
+  }
+
   const parts = String(data.secure_url).split("/upload/");
   return parts.length === 2
     ? `${parts[0]}/upload/f_auto,q_auto/${parts[1]}`
@@ -1128,6 +1182,7 @@ async function handleFiles(input){
   const list = input.files;
   input.value = "";
   if (!list || !list.length) return;
+
   $("#phErr").hidden = true;
   state.busy = true;
   $("#camLabel").textContent = "در حال آپلود…";
@@ -1137,12 +1192,15 @@ async function handleFiles(input){
 
   try{
     const room = MAX_PHOTOS - state.photos.length;
-    const files = Array.from(list).filter(f => f.type.startsWith("image/")).slice(0, room);
+    const files = Array.from(list)
+      .filter(f => f && f.type && f.type.startsWith("image/"))
+      .slice(0, room);
     if (!files.length) throw new Error("NOT_IMAGE");
 
     const made = [];
-    for (const f of files){
-      made.push(await uploadToCloudinary(f));
+    for (let i=0; i<files.length; i++){
+      $("#camLabel").textContent = `آپلود ${toFa(i+1)} از ${toFa(files.length)}…`;
+      made.push(await uploadToCloudinary(files[i]));
     }
     state.photos = [...state.photos, ...made].slice(0, MAX_PHOTOS);
 
@@ -1152,11 +1210,11 @@ async function handleFiles(input){
     }
   }catch(err){
     console.error("Image upload error:", err);
-    const msg = err?.message === "CLOUDINARY_NOT_CONFIGURED"
-      ? "Cloudinary هنوز تنظیم نشده؛ Cloud name و Unsigned Upload Preset را وارد کن."
-      : err?.message === "IMAGE_TOO_LARGE"
-        ? "حجم هر عکس باید کمتر از ۱۲ مگابایت باشد."
-        : "آپلود عکس انجام نشد؛ اتصال اینترنت و تنظیمات Cloudinary را بررسی کن.";
+    let msg = "آپلود عکس انجام نشد.";
+    if (err?.message === "CLOUDINARY_NOT_CONFIGURED") msg = "Cloudinary هنوز تنظیم نشده است.";
+    else if (err?.message === "IMAGE_TOO_LARGE") msg = "حجم عکس خیلی زیاد است؛ عکس کوچک‌تری انتخاب کن.";
+    else if (err?.message === "CLOUDINARY_NETWORK") msg = "اتصال به Cloudinary برقرار نشد؛ اینترنت یا محدودیت شبکه را بررسی کن.";
+    else if (err?.message) msg = `Cloudinary: ${err.message}`;
     $("#phErr").textContent = msg;
     $("#phErr").hidden = false;
   }finally{
@@ -1168,50 +1226,6 @@ async function handleFiles(input){
   }
 }
 
-$("#addForm").addEventListener("submit", async e => {
-  e.preventDefault();
-  if (state.busy) return;
-
-  const mem = {
-    id: Date.now(),
-    title: $("#fTitle").value.trim(),
-    text: $("#fText").value.trim() || "این خاطره هنوز قصه‌اش نوشته نشده…",
-    author: state.curAuthor,
-    dateFa: $("#fDateFa").value.trim() || todayFa(),
-    iso: $("#fDateIso").value || todayIso(),
-    mood: "دست‌نویسِ تازه",
-    photos: [...state.photos],
-    likes: 0,
-    userAdded: true
-  };
-
-  state.busy = true;
-  $("#submitBtn").disabled = true;
-  $("#submitLabel").textContent = "در حال انتشار…";
-
-  try{
-    await window.firebaseSaveMemory(mem);
-    // رندر آنی؛ listener فایربیس هم آن را از سرور همگام می‌کند.
-    state.userMems = [mem, ...state.userMems.filter(m => m.id !== mem.id)];
-    state.filter = "all";
-    state.sort = "new";
-    state.freshId = mem.id;
-    renderFilters(); renderTimeline(); renderMembers();
-    closeAdd();
-    setTimeout(() => { state.freshId = null; renderTimeline(); }, 3500);
-    document.getElementById("timeline").scrollIntoView({ behavior:"smooth", block:"start" });
-  }catch(err){
-    console.error("Publish error:", err);
-    const msg = err?.message === "FIREBASE_NOT_CONFIGURED"
-      ? "Firebase هنوز تنظیم نشده؛ اطلاعات Web App را وارد کن و Anonymous Auth را فعال کن."
-      : "انتشار انجام نشد؛ اتصال و قوانین Firestore را بررسی کن.";
-    showToast(msg);
-  }finally{
-    state.busy = false;
-    $("#submitBtn").disabled = false;
-    $("#submitLabel").textContent = "ثبت در پاتوق";
-  }
-});
 /* ---------------- لایت‌باکس ---------------- */
 function openLb(id, idx){
   const m = allMems().find(x => x.id === id);
@@ -1343,7 +1357,7 @@ window.addEventListener("error", e => {
   }
 }, true);
 /* ---------------- شروع ---------------- */
-state.userMems = loadUserMems();
+state.userMems = [];
 renderTicker();
 renderStacks();
 renderFilters();
